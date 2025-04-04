@@ -1,0 +1,9 @@
+numpy
+python-dotenv
+pygame
+torch
+llama_index
+numpy
+neat
+matplotlib
+pygame

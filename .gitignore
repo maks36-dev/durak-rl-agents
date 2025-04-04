@@ -1,0 +1,53 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+env/
+venv/
+.venv/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints
+
+# VSCode settings (если используешь)
+.vscode/
+
+# PyCharm settings
+.idea/
+
+# Log files
+*.log
+
+# Model checkpoints
+*.ckpt
+*.h5
+*.pth
+*.pt
+
+# TensorBoard and wandb logs
+runs/
+wandb/
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Python egg info
+*.egg-info/
+dist/
+build/
+
+# Environment variables
+.env
+
+# Coverage and test stuff
+htmlcov/
+.tox/
+.coverage
+.cache
+pytest_cache/
+
+# Custom cache
+__results__/
