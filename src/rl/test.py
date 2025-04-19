@@ -8,8 +8,8 @@ epoch_result = {"player": 0, "computer": 0, "draw": 0}
 if __name__ == "__main__":
     n_games = 100
 
-    agent1 = PPOPlayer(model_path=r"C:\src\rl\models\ppo.pth")
-    agent2 = DQNPlayer(model_path=r"C:\src\rl\models\1head_180epochs.pth")
+    agent1 = PPOPlayer(model_path=r"\src\rl\models\ppo.pth")
+    agent2 = DQNPlayer(model_path=r"\src\rl\models\1head_180epochs.pth")
 
     for _ in (range(n_games)):
 

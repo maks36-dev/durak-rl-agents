@@ -1,91 +1,82 @@
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.distributions import Normal
+
 
 class PPO(nn.Module):
-    def __init__(self, state_dim, action_dim, gamma=0.9, batch_size=128,
-                 epsilon=0.2, epoch_n=10, pi_lr=1e-4, v_lr=5e-4):
-
+    def __init__(self, state_dim, action_dim, gamma=0.99,
+                 batch_size=128, eps_clip=0.2,
+                 pi_lr=3e-4, v_lr=1e-3, epoch_n=5):
         super().__init__()
 
-        self.pi_model = nn.Sequential(nn.Linear(state_dim, 128), nn.ReLU(),
-                                      nn.Linear(128, 128), nn.ReLU(),
-                                      nn.Linear(128, 2 * action_dim), nn.Tanh())
+        self.pi_model = nn.Sequential(
+            nn.Linear(state_dim, 128), nn.Tanh(),
+            nn.Linear(128, 128), nn.Tanh(),
+            nn.Linear(128, action_dim)
+        )
+        self.v_model = nn.Sequential(
+            nn.Linear(state_dim, 128), nn.Tanh(),
+            nn.Linear(128, 128), nn.Tanh(),
+            nn.Linear(128, 1)
+        )
 
-        self.v_model = nn.Sequential(nn.Linear(state_dim, 128), nn.ReLU(),
-                                     nn.Linear(128, 128), nn.ReLU(),
-                                     nn.Linear(128, 1))
+        self.gamma, self.eps_clip = gamma, eps_clip
+        self.batch_size, self.epoch_n = batch_size, epoch_n
+        self.pi_opt = torch.optim.Adam(self.pi_model.parameters(), lr=pi_lr)
+        self.v_opt  = torch.optim.Adam(self.v_model.parameters(),  lr=v_lr)
 
-        self.gamma = gamma
-        self.batch_size = batch_size
-        self.epsilon = epsilon
-        self.epoch_n = epoch_n
-        self.pi_optimizer = torch.optim.Adam(self.pi_model.parameters(), lr=pi_lr)
-        self.v_optimizer = torch.optim.Adam(self.v_model.parameters(), lr=v_lr)
+    def get_action(self, state, greedy=False):
+        state = torch.as_tensor(state, dtype=torch.float32).unsqueeze(0)
+        logits = self.pi_model(state)
+        dist   = torch.distributions.Categorical(logits=logits)
+        action = dist.probs.argmax() if greedy else dist.sample()
+        return action
 
-    def get_action(self, state):
+    def fit(self, traj):
+        states, actions, rewards, dones = map(np.array, zip(*traj))
+        rewards, dones = rewards.reshape(-1,1), dones.reshape(-1,1)
+
+        returns = np.zeros_like(rewards)
+        R = 0
+        for t in reversed(range(len(traj))):
+            R = rewards[t] + self.gamma * R * (1 - dones[t])
+            returns[t] = R
+        states  = torch.tensor(states, dtype=torch.float32)
+        actions = torch.tensor(actions, dtype=torch.int64)
+        returns = torch.tensor(returns, dtype=torch.float32)
+
         with torch.no_grad():
-            output = self.pi_model(torch.FloatTensor(state))
-            mean = output[:, :37]
-            log_std = output[:, 37:]
-            dist = Normal(mean, torch.exp(log_std))
-            action = dist.sample()
-            return action.reshape(37)
+            logits = self.pi_model(states)
+            dist   = torch.distributions.Categorical(logits=logits)
+            old_log_probs = dist.log_prob(actions)
+            values = self.v_model(states).squeeze()
+            advantages = (returns.squeeze() - values).detach()
+            advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
-    def fit(self, batch):
+        for _ in range(self.epoch_n):
+            idx = np.random.permutation(len(traj))
+            for start in range(0, len(traj), self.batch_size):
+                batch = idx[start:start + self.batch_size]
+                b_s, b_a, b_rt = states[batch], actions[batch], returns[batch].squeeze()
+                b_adv, b_old = advantages[batch], old_log_probs[batch]
 
-        states, actions, rewards, dones = map(np.array, zip(*batch))
-        rewards, dones = rewards.reshape(-1, 1), dones.reshape(-1, 1)
+                logits = self.pi_model(b_s)
+                dist   = torch.distributions.Categorical(logits=logits)
+                new_log_probs = dist.log_prob(b_a)
+                ratio = (new_log_probs - b_old).exp()
 
-        returns = np.zeros(rewards.shape)
-        returns[-1] = rewards[-1]
-        for t in range(returns.shape[0] - 2, -1, -1):
-            returns[t] = rewards[t] + (1 - dones[t]) * self.gamma * returns[t + 1]
+                # clipped surrogate
+                surr1 = ratio * b_adv
+                surr2 = torch.clamp(ratio, 1.0 - self.eps_clip, 1.0 + self.eps_clip) * b_adv
+                pi_loss = -torch.min(surr1, surr2).mean()  \
+                          - 0.01 * dist.entropy().mean()
 
-        states, returns = map(torch.FloatTensor, [states, returns])
-
-        mask = torch.zeros(len(batch), 37)
-        mask[range(len(batch)), actions] = 1
-        actions = mask
-
-        output = self.pi_model(states)
-        mean = output[:, :37]
-        log_std = output[:, 37:]
-
-        dist = Normal(mean, torch.exp(log_std))
-        old_log_probs = dist.log_prob(actions).detach()
-
-        for epoch in range(self.epoch_n):
-
-            idxs = np.random.permutation(returns.shape[0])
-            for i in range(0, returns.shape[0], self.batch_size):
-                b_idxs = idxs[i: i + self.batch_size]
-                b_states = states[b_idxs]
-                b_actions = actions[b_idxs]
-                b_returns = returns[b_idxs]
-                b_old_log_probs = old_log_probs[b_idxs]
-
-                b_advantage = b_returns.detach() - self.v_model(b_states)
-
-                output = self.pi_model(b_states)
-                b_mean = output[:, :37]
-                b_log_std = output[:, 37:]
-                # b_mean, b_log_std = b_mean.unsqueeze(1), b_log_std.unsqueeze(1)
-                b_dist = Normal(b_mean, torch.exp(b_log_std))
-                b_new_log_probs = b_dist.log_prob(b_actions)
-
-                b_ratio = torch.exp(b_new_log_probs - b_old_log_probs)
-                pi_loss_1 = b_ratio * b_advantage.detach()
-                pi_loss_2 = torch.clamp(b_ratio, 1. - self.epsilon, 1. + self.epsilon) * b_advantage.detach()
-                pi_loss = - torch.mean(torch.min(pi_loss_1, pi_loss_2))
-
+                self.pi_opt.zero_grad()
                 pi_loss.backward()
-                self.pi_optimizer.step()
-                self.pi_optimizer.zero_grad()
+                self.pi_opt.step()
 
-                v_loss = torch.mean(b_advantage ** 2)
-
+                # value loss
+                v_loss = ((self.v_model(b_s).squeeze() - b_rt)**2).mean()
+                self.v_opt.zero_grad()
                 v_loss.backward()
-                self.v_optimizer.step()
-                self.v_optimizer.zero_grad()
+                self.v_opt.step()

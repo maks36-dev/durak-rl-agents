@@ -15,23 +15,22 @@ computer = GreedyPlayer()
 def update(frame):
     epochs_result = accuracy_ppo(model, computer)
 
-    ax[0].clear()
-    ax[1].clear()
+    ax.clear()
 
     # plot data
-    ax[0].plot(epochs_result["player"], color='r')
+    ax.plot(epochs_result["player"], color='r')
 
 
     # set options
-    ax[0].set_ylim([0, 1])
-    ax[0].grid()
-    ax[0].set_xlabel('Epochs', fontweight='bold', fontsize=15)
-    ax[0].set_ylabel('Win Rate', fontweight='bold', fontsize=15)
+    ax.set_ylim([0, 1])
+    ax.grid()
+    ax.set_xlabel('Epochs', fontweight='bold', fontsize=15)
+    ax.set_ylabel('Win Rate', fontweight='bold', fontsize=15)
 
     fig.canvas.draw()
 
     if frame % 10 == 0:
-        torch.save(model.model.state_dict(), r"C:\src\checkpoint_ppo.pth")
+        torch.save(model.model.state_dict(), r"\src\checkpoint_ppo.pth")
 
 
 anim = FuncAnimation(fig, update, frames=range(300), repeat=False)

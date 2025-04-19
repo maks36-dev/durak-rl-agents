@@ -1,10 +1,10 @@
 import random
-
 from tqdm import tqdm
 
 from src.rl.players.base_players.greedy_player import GreedyPlayer
 from src.rl.env import DurakEnv
 from copy import deepcopy
+
 
 def train_dqn(model, computer):
     epochs = 10
@@ -28,7 +28,7 @@ def train_dqn(model, computer):
 
             for r in range(100):
                 old_state = deepcopy(state)
-                if random.random() < epsilon and False:
+                if random.random() < epsilon:
                     eps_player.hand = player.hand
                     action = eps_player.get_action(*state)
                     player.hand = eps_player.hand
@@ -68,7 +68,7 @@ def train_ppo(player, computer, epsilon_step=0.005, epsilon_min=0.001):
         for r in range(100):
             old_state = deepcopy(state)
 
-            if random.random() < epsilon and False:
+            if random.random() < epsilon:
                 eps_player.hand = player.hand
                 action = eps_player.get_action(*state)
                 player.hand = eps_player.hand
